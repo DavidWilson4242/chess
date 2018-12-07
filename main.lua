@@ -360,7 +360,7 @@ local function make_move(cell_x, cell_y)
             if player_turn == "white" then
                 table.insert(white_captured, board[att_x][att_y])
             else
-                table.insert(white_captured, board[att_x][att_y])
+                table.insert(black_captured, board[att_x][att_y])
             end
         end
         board[att_x][att_y] = my_piece
@@ -522,7 +522,7 @@ local function draw_captured()
     local box_x = BOARD_OFFSET_X
     local box_y = BOARD_OFFSET_Y - 80
 
-    for i, v in ipairs(white_captured) do
+    for i, v in ipairs(black_captured) do
         local x_pos = (i - 1)*CAPTURED_SIZE + box_x 
         local y_pos = box_y
         love.graphics.setColor(1, 1, 1, 1)
