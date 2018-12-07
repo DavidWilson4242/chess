@@ -63,20 +63,20 @@ local valid_moves = {}
 
 local piece_data = {
     white = {
-        king   = {name = "king",   color = "white", quad = love.graphics.newQuad(piece_width*0, 0, piece_width, piece_height, chess_width, chess_height)};
-        queen  = {name = "queen",  color = "white", quad = love.graphics.newQuad(piece_width*1, 0, piece_width, piece_height, chess_width, chess_height)};
-        bishop = {name = "bishop", color = "white", quad = love.graphics.newQuad(piece_width*2, 0, piece_width, piece_height, chess_width, chess_height)};
-        knight = {name = "knight", color = "white", quad = love.graphics.newQuad(piece_width*3, 0, piece_width, piece_height, chess_width, chess_height)};
-        rook   = {name = "rook",   color = "white", quad = love.graphics.newQuad(piece_width*4, 0, piece_width, piece_height, chess_width, chess_height)};
-        pawn   = {name = "pawn",   color = "white", quad = love.graphics.newQuad(piece_width*5, 0, piece_width, piece_height, chess_width, chess_height)};
+        king   = {name = "king",   worth = 0, color = "white", quad = love.graphics.newQuad(piece_width*0, 0, piece_width, piece_height, chess_width, chess_height)};
+        queen  = {name = "queen",  worth = 9, color = "white", quad = love.graphics.newQuad(piece_width*1, 0, piece_width, piece_height, chess_width, chess_height)};
+        bishop = {name = "bishop", worth = 3, color = "white", quad = love.graphics.newQuad(piece_width*2, 0, piece_width, piece_height, chess_width, chess_height)};
+        knight = {name = "knight", worth = 3, color = "white", quad = love.graphics.newQuad(piece_width*3, 0, piece_width, piece_height, chess_width, chess_height)};
+        rook   = {name = "rook",   worth = 5, color = "white", quad = love.graphics.newQuad(piece_width*4, 0, piece_width, piece_height, chess_width, chess_height)};
+        pawn   = {name = "pawn",   worth = 1, color = "white", quad = love.graphics.newQuad(piece_width*5, 0, piece_width, piece_height, chess_width, chess_height)};
     };
     black = {
-        king   = {name = "king",   color = "black", quad = love.graphics.newQuad(piece_width*0, piece_height, piece_width, piece_height, chess_width, chess_height)};
-        queen  = {name = "queen",  color = "black", quad = love.graphics.newQuad(piece_width*1, piece_height, piece_width, piece_height, chess_width, chess_height)};
-        bishop = {name = "bishop", color = "black", quad = love.graphics.newQuad(piece_width*2, piece_height, piece_width, piece_height, chess_width, chess_height)};
-        knight = {name = "knight", color = "black", quad = love.graphics.newQuad(piece_width*3, piece_height, piece_width, piece_height, chess_width, chess_height)};
-        rook   = {name = "rook",   color = "black", quad = love.graphics.newQuad(piece_width*4, piece_height, piece_width, piece_height, chess_width, chess_height)};
-        pawn   = {name = "pawn",   color = "black", quad = love.graphics.newQuad(piece_width*5, piece_height, piece_width, piece_height, chess_width, chess_height)};
+        king   = {name = "king",   worth = 0, color = "black", quad = love.graphics.newQuad(piece_width*0, piece_height, piece_width, piece_height, chess_width, chess_height)};
+        queen  = {name = "queen",  worth = 9, color = "black", quad = love.graphics.newQuad(piece_width*1, piece_height, piece_width, piece_height, chess_width, chess_height)};
+        bishop = {name = "bishop", worth = 3, color = "black", quad = love.graphics.newQuad(piece_width*2, piece_height, piece_width, piece_height, chess_width, chess_height)};
+        knight = {name = "knight", worth = 3, color = "black", quad = love.graphics.newQuad(piece_width*3, piece_height, piece_width, piece_height, chess_width, chess_height)};
+        rook   = {name = "rook",   worth = 5, color = "black", quad = love.graphics.newQuad(piece_width*4, piece_height, piece_width, piece_height, chess_width, chess_height)};
+        pawn   = {name = "pawn",   worth = 1, color = "black", quad = love.graphics.newQuad(piece_width*5, piece_height, piece_width, piece_height, chess_width, chess_height)};
     }
 };
 
@@ -177,7 +177,7 @@ local function isvalid_pawn(my_piece, move_x, move_y)
     
     if not my_piece.has_moved and my_piece.x == move_x and my_piece.y + direction*2 == move_y then
         -- attempt to make a two space move?
-        if get_piece(move_x, move_y) then
+        if get_piece(move_x, move_y) or get_piece(move_x, move_y - direction) then
             return false
         end
         return true
@@ -323,6 +323,17 @@ local function isvalid_queen(my_piece, move_x, move_y)
     
 end
 
+local function get_all_valid_moves(piece)
+    local validity_check_function = (
+        piece.data.name == "pawn" and isvalid_pawn or
+        piece.data.name == "rook" and isvalid_rook or
+        piece.data.name == "knight" and isvalid_knight or
+        piece.data.name == "bishop" and isvalid_bishop or
+        piece.data.name == "king" and isvalid_king or
+        piece.data.name == "queen" and isvalid_queen or nil
+    )
+end
+
 -- cell_x and cell_y are valid cell positions
 local function make_move(cell_x, cell_y)
 
@@ -357,10 +368,20 @@ local function make_move(cell_x, cell_y)
         my_piece.x = att_x
         my_piece.y = att_y
         if board[att_x][att_y] then
+            local function do_sort(t)
+                table.sort(t, function(a, b)
+                    if a.data.worth ~= b.data.worth then
+                        return a.data.worth > b.data.worth
+                    end
+                    return a.data.name > b.data.name
+                end)
+            end
             if player_turn == "white" then
                 table.insert(white_captured, board[att_x][att_y])
+                do_sort(white_captured)
             else
                 table.insert(black_captured, board[att_x][att_y])
+                do_sort(black_captured)
             end
         end
         board[att_x][att_y] = my_piece
@@ -385,6 +406,9 @@ local function make_move(cell_x, cell_y)
     end
     
 
+end
+
+local function is_in_check(color)
 end
 
 local function get_piece_from_mouse(mouse_x, mouse_y)
