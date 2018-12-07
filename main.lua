@@ -116,6 +116,12 @@ local function get_cell(mouse_x, mouse_y)
     return cell_x, cell_y
 end
 
+local function cell_to_screen(cell_x, cell_y)
+    local x_pos = (cell_x - 1)*CELL_SIZE + BOARD_OFFSET_X
+    local y_pos = (cell_y - 1)*CELL_SIZE + BOARD_OFFSET_Y
+    return x_pos, y_pos
+end
+
 local function is_valid_cell(cell_x, cell_y)
     return cell_x >= 1 and cell_x <= 8 and cell_y >= 1 and cell_y <= 8
 end
@@ -451,8 +457,7 @@ local function draw_board()
                 love.graphics.setColor(LIGHT_TILE_COLOR[1], LIGHT_TILE_COLOR[2], LIGHT_TILE_COLOR[3], 1)
             end
             
-            local x_pos = (i - 1)*CELL_SIZE + BOARD_OFFSET_X
-            local y_pos = (j - 1)*CELL_SIZE + BOARD_OFFSET_Y
+            local x_pos, y_pos = cell_to_screen(i, j)
 
             love.graphics.rectangle("fill", x_pos, y_pos, CELL_SIZE, CELL_SIZE)
 
@@ -467,8 +472,7 @@ local function draw_board()
 
     -- draw circles for valid moves
     for i, v in ipairs(valid_moves) do
-        local x_pos = (v.cell_x - 1)*CELL_SIZE + BOARD_OFFSET_X
-        local y_pos = (v.cell_y - 1)*CELL_SIZE + BOARD_OFFSET_Y
+        local x_pos, y_pos = cell_to_screen(v.cell_x, v.cell_y)
         
         love.graphics.setColor(CIRCLE_COLOR[1], CIRCLE_COLOR[2], CIRCLE_COLOR[3], 220/255)
         love.graphics.circle("fill", x_pos + CELL_SIZE/2, y_pos + CELL_SIZE/2, CIRCLE_SIZE, CIRCLE_SIZE)
@@ -479,8 +483,7 @@ local function draw_board()
     -- redraw the selected piece so that it is layered
     -- on top of everything else
     if selected_piece then
-        local x_pos = (selected_piece.x - 1)*CELL_SIZE + BOARD_OFFSET_X
-        local y_pos = (selected_piece.y - 1)*CELL_SIZE + BOARD_OFFSET_Y
+        local x_pos, y_pos = cell_to_screen(selected_piece.x, selected_piece.y)
         love.graphics.draw(chess_sprites, selected_piece.data.quad, x_pos + selected_piece.ox, y_pos + selected_piece.oy, 0, CELL_SCALE)
     end
 
@@ -543,8 +546,8 @@ local function draw_captured()
     love.graphics.setColor(LIGHT_TILE_COLOR[1], LIGHT_TILE_COLOR[2], LIGHT_TILE_COLOR[3])
     love.graphics.rectangle("fill", BOARD_OFFSET_X, BOARD_OFFSET_Y - 80, BOARD_SIZE, 50)
 
-    local box_x = BOARD_OFFSET_X
-    local box_y = BOARD_OFFSET_Y - 80
+    box_x = BOARD_OFFSET_X
+    box_y = BOARD_OFFSET_Y - 80
 
     for i, v in ipairs(black_captured) do
         local x_pos = (i - 1)*CAPTURED_SIZE + box_x 
