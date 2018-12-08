@@ -1,12 +1,12 @@
 local circles = {} 
 
 -- constants
-local CELL_SIZE = 100
+local CELL_SIZE = 70
 local CIRCLE_SIZE = 10
 local START_TIME = 60*5
 local TIME_INCREMENT = 5
-local CLOCK_FONT_SIZE = 48
-local CAPTURED_SIZE = 50
+local CLOCK_FONT_SIZE = 45 
+local CAPTURED_SIZE = 40
 
 -- misc constants
 local WIDTH = love.graphics.getWidth()
@@ -56,6 +56,12 @@ local elapsed_black = 0
 local game_running = false
 local white_captured = {}
 local black_captured = {}
+local white_in_check = false
+local black_in_check = false
+local white_has_castled = false
+local black_has_castled = false
+local game_over = false
+local winner = nil
 
 -- valid moves is a table of {cell_x, cell_y} describing valid moves
 -- for the current selected piece
@@ -93,7 +99,7 @@ local board = {}
         has_moved = piece_has_moved;
     }
 ]]
-local function make_piece(name, color, x, y)
+function make_piece(name, color, x, y)
 
     local piece = {}
     piece.data = piece_data[color][name]
@@ -110,30 +116,30 @@ local function make_piece(name, color, x, y)
 
 end
 
-local function get_cell(mouse_x, mouse_y)
+function get_cell(mouse_x, mouse_y)
     local cell_x = math.floor((mouse_x - BOARD_OFFSET_X) / CELL_SIZE) + 1
     local cell_y = math.floor((mouse_y - BOARD_OFFSET_Y) / CELL_SIZE) + 1
     return cell_x, cell_y
 end
 
-local function cell_to_screen(cell_x, cell_y)
+function cell_to_screen(cell_x, cell_y)
     local x_pos = (cell_x - 1)*CELL_SIZE + BOARD_OFFSET_X
     local y_pos = (cell_y - 1)*CELL_SIZE + BOARD_OFFSET_Y
     return x_pos, y_pos
 end
 
-local function is_valid_cell(cell_x, cell_y)
+function is_valid_cell(cell_x, cell_y)
     return cell_x >= 1 and cell_x <= 8 and cell_y >= 1 and cell_y <= 8
 end
 
-local function get_piece(cell_x, cell_y)
+function get_piece(cell_x, cell_y)
     if not is_valid_cell(cell_x, cell_y) then
         return nil
     end
     return board[cell_x][cell_y]
 end
 
-local function reset_board()
+function reset_board()
     board = {}
     for i = 1, BOARD_Y do
         board[i] = {}
@@ -158,7 +164,7 @@ local function reset_board()
     end
 end
 
-local function get_moves_in_direction(color, distance, start_x, start_y, dx, dy)
+function get_moves_in_direction(color, distance, start_x, start_y, dx, dy)
     local valid = {}
     for i = 1, distance do
         local mx = start_x + dx*i
@@ -178,7 +184,7 @@ local function get_moves_in_direction(color, distance, start_x, start_y, dx, dy)
     return valid
 end
 
-local function isvalid_pawn(my_piece, move_x, move_y)
+function isvalid_pawn(my_piece, move_x, move_y)
     local direction = player_turn == "white" and -1 or 1
     
     if not my_piece.has_moved and my_piece.x == move_x and my_piece.y + direction*2 == move_y then
@@ -214,7 +220,7 @@ local function isvalid_pawn(my_piece, move_x, move_y)
 
 end
 
-local function isvalid_rook(my_piece, move_x, move_y)
+function isvalid_rook(my_piece, move_x, move_y)
     -- just compile a list of valid moves and check if our move is in it
     local valid = {}
     
@@ -234,7 +240,7 @@ local function isvalid_rook(my_piece, move_x, move_y)
     end
 end
 
-local function isvalid_knight(my_piece, move_x, move_y)
+function isvalid_knight(my_piece, move_x, move_y)
     
     --[[
         . . E . E . .
@@ -263,7 +269,7 @@ local function isvalid_knight(my_piece, move_x, move_y)
 
 end
 
-local function isvalid_bishop(my_piece, move_x, move_y)
+function isvalid_bishop(my_piece, move_x, move_y)
 
     -- just compile a list of valid moves and check if our move is in it
     local valid = {}
@@ -282,9 +288,11 @@ local function isvalid_bishop(my_piece, move_x, move_y)
             return true
         end
     end
+
+    return false
 end
 
-local function isvalid_king(my_piece, move_x, move_y)
+function isvalid_king(my_piece, move_x, move_y)
 
     -- just compile a list of valid moves and check if our move is in it
     local valid = {}
@@ -304,9 +312,31 @@ local function isvalid_king(my_piece, move_x, move_y)
             return true
         end
     end
+
+    -- are we castling?
+    local target = board[move_x][move_y]
+    local is_castling = (
+        not my_piece.has_moved and
+        target and
+        target.data.name == "rook" and
+        target.data.color == my_piece.data.color and
+        not target.has_moved
+    )
+    if not is_castling then
+        return false
+    end
+    local dist = math.abs(target.x - my_piece.x)
+    local dir = (target.x - my_piece.x > 0) and 1 or -1
+    for i = 1, dist - 1 do
+        local x_check = my_piece.x + i*dir
+        if board[x_check][my_piece.y] then
+            return false
+        end
+    end
+    return true
 end
 
-local function isvalid_queen(my_piece, move_x, move_y)
+function isvalid_queen(my_piece, move_x, move_y)
     
     -- just compile a list of valid moves and check if our move is in it
     local valid = {}
@@ -329,7 +359,43 @@ local function isvalid_queen(my_piece, move_x, move_y)
     
 end
 
-local function get_all_valid_moves(piece)
+function is_in_check(color)
+    local friendly_color = color
+    local enemy_color = color == "white" and "black" or "white"
+
+    for i = 1, 8 do
+        for j = 1, 8 do
+            local piece = board[i][j]
+            if piece and piece.data.color ~= friendly_color then
+                for q, k in ipairs(get_all_valid_moves(piece, true)) do
+                    local attacking_piece = board[k.cell_x][k.cell_y]
+                    if attacking_piece and attacking_piece.data.color == friendly_color and attacking_piece.data.name == "king" then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+    
+end
+
+-- counts up all the possible moves for a color
+function count_all_valid_moves(color)
+    local count = 0
+    for i = 1, 8 do
+        for j = 1, 8 do
+            local piece = board[i][j]
+            if piece and piece.data.color == color then
+                count = count + #get_all_valid_moves(piece) 
+            end
+        end
+    end
+    return count
+end
+
+function get_all_valid_moves(piece, ignore_check)
     local validity_check_function = (
         piece.data.name == "pawn" and isvalid_pawn or
         piece.data.name == "rook" and isvalid_rook or
@@ -338,10 +404,40 @@ local function get_all_valid_moves(piece)
         piece.data.name == "king" and isvalid_king or
         piece.data.name == "queen" and isvalid_queen or nil
     )
+    local possible_moves = {}
+    for i = 1, 8 do
+        for j = 1, 8 do
+            if (i ~= piece.x or j ~= piece.y) and validity_check_function(piece, i, j) then
+                if ignore_check then
+                    table.insert(possible_moves, {cell_x = i, cell_y = j})
+                else 
+                    -- !! UGLY HACK !!
+                    -- temporarially move the piece.  if it puts us in check, don't
+                    -- allow as a valid move
+                    local correct_piece = board[i][j]
+                    local my_old_x = piece.x
+                    local my_old_y = piece.y
+                    board[i][j] = piece
+                    board[my_old_x][my_old_y] = nil
+                    piece.x = i
+                    piece.y = j
+                    if not is_in_check(piece.data.color) then
+                        table.insert(possible_moves, {cell_x = i, cell_y = j})
+                    end
+                    -- revert!
+                    piece.x = my_old_x
+                    piece.y = my_old_y
+                    board[i][j] = correct_piece
+                    board[my_old_x][my_old_y] = piece
+                end
+            end
+        end
+    end
+    return possible_moves
 end
 
 -- cell_x and cell_y are valid cell positions
-local function make_move(cell_x, cell_y)
+function make_move(cell_x, cell_y)
 
     local my_piece = selected_piece
     local my_x = selected_piece.x
@@ -351,7 +447,7 @@ local function make_move(cell_x, cell_y)
     local att_x = cell_x
     local att_y = cell_y
 
-    local function do_make_move()
+    function do_make_move()
 
         game_running = true 
 
@@ -370,54 +466,88 @@ local function make_move(cell_x, cell_y)
         end
 
         -- move the piece
-        board[my_x][my_y] = nil
-        my_piece.x = att_x
-        my_piece.y = att_y
-        if board[att_x][att_y] then
-            local function do_sort(t)
-                table.sort(t, function(a, b)
-                    if a.data.worth ~= b.data.worth then
-                        return a.data.worth > b.data.worth
-                    end
-                    return a.data.name > b.data.name
-                end)
+        -- special case for castling
+        local target = board[att_x][att_y]
+        local is_castling = (
+            my_piece.data.name == "king" and
+            not my_piece.has_moved and
+            target and
+            target.data.name == "rook" and
+            target.data.color == my_piece.data.color and
+            not target.has_moved
+        )
+        if is_castling then
+            local dir = (att_x - my_piece.x) > 1 and 1 or -1
+            local new_king_x = my_piece.x + 2*dir
+            local new_rook_x = new_king_x - dir
+            board[att_x][att_y] = nil
+            board[my_piece.x][my_piece.y] = nil
+            board[new_king_x][my_piece.y] = my_piece
+            board[new_rook_x][att_y] = target
+            target.x = new_rook_x
+            my_piece.x = new_king_x
+            target.has_moved = true
+            my_piece.has_moved = true
+        else 
+            board[my_x][my_y] = nil
+            my_piece.x = att_x
+            my_piece.y = att_y
+            if target then
+                function do_sort(t)
+                    table.sort(t, function(a, b)
+                        if a.data.worth ~= b.data.worth then
+                            return a.data.worth > b.data.worth
+                        end
+                        return a.data.name > b.data.name
+                    end)
+                end
+                if player_turn == "white" then
+                    table.insert(white_captured, board[att_x][att_y])
+                    do_sort(white_captured)
+                else
+                    table.insert(black_captured, board[att_x][att_y])
+                    do_sort(black_captured)
+                end
             end
-            if player_turn == "white" then
-                table.insert(white_captured, board[att_x][att_y])
-                do_sort(white_captured)
-            else
-                table.insert(black_captured, board[att_x][att_y])
-                do_sort(black_captured)
+            board[att_x][att_y] = my_piece
+            my_piece.has_moved = true
+        end
+
+        -- check if it's a pawn that should become a queen
+        if my_piece.data.name == "pawn" then
+            if player_turn == "white" and my_piece.y == 1 then
+                board[att_x][att_y] = make_piece("queen", "white", att_x, att_y)
+            elseif player_turn == "black" and my_piece.y == 8 then
+                board[att_x][att_y] = make_piece("queen", "black", att_x, att_y)
             end
         end
-        board[att_x][att_y] = my_piece
-        my_piece.has_moved = true
+
+        -- if either player has no possible moves, the other player wins
+        local moves_white = count_all_valid_moves("white")
+        local moves_black = count_all_valid_moves("black")
+        if moves_white == 0 then
+            game_over = true
+            winner = "black"
+        elseif moves_black == 0 then
+            game_over = true
+            winner = "white"
+        end
 
         -- change turn
         player_turn = (player_turn == "white" and "black" or "white")
     end
     
     -- the function that will be used to validate each tile
-    local validity_check_function = (
-        my_piece.data.name == "pawn" and isvalid_pawn or
-        my_piece.data.name == "rook" and isvalid_rook or
-        my_piece.data.name == "knight" and isvalid_knight or
-        my_piece.data.name == "bishop" and isvalid_bishop or
-        my_piece.data.name == "king" and isvalid_king or
-        my_piece.data.name == "queen" and isvalid_queen or nil
-    )
-
-    if validity_check_function(my_piece, att_x, att_y) then
-        do_make_move()
+    for i, v in ipairs(valid_moves) do
+        if v.cell_x == att_x and v.cell_y == att_y then
+            do_make_move()
+            break
+        end
     end
-    
 
 end
 
-local function is_in_check(color)
-end
-
-local function get_piece_from_mouse(mouse_x, mouse_y)
+function get_piece_from_mouse(mouse_x, mouse_y)
     local board_x = BOARD_OFFSET_X
     local board_y = BOARD_OFFSET_Y
     local board_mx = mouse_x - board_x
@@ -441,7 +571,7 @@ local function get_piece_from_mouse(mouse_x, mouse_y)
 
 end
 
-local function draw_board() 
+function draw_board() 
     
     -- background square
     love.graphics.setColor(0, 0, 0)
@@ -489,9 +619,9 @@ local function draw_board()
 
 end
 
-local function draw_clock()
+function draw_clock()
 
-    local function seconds_to_string(s)
+    function seconds_to_string(s)
         return string.format("%01d:%02d", math.floor(s/60), s%60)
     end
 
@@ -519,17 +649,25 @@ local function draw_clock()
     
     love.graphics.setFont(clock_font)
     love.graphics.setColor(1, 1, 1)
-    love.graphics.printf(seconds_to_string(time_black), box_x + 45, box_y + box_sy/4 - CLOCK_FONT_SIZE/2, box_x)
-    love.graphics.printf(seconds_to_string(time_white), box_x + 45, box_y + 3*box_sy/4 - CLOCK_FONT_SIZE/2, box_x)
+    if game_over then
+        if winner == "white" then
+            love.graphics.printf("WINNER", box_x + 45, box_y + 3*box_sy/4 - CLOCK_FONT_SIZE/2, box_x)
+        else
+            love.graphics.printf("WINNER", box_x + 45, box_y + box_sy/4 - CLOCK_FONT_SIZE/2, box_x)
+        end
+    else
+        love.graphics.printf(seconds_to_string(time_black), box_x + 45, box_y + box_sy/4 - CLOCK_FONT_SIZE/2, box_x)
+        love.graphics.printf(seconds_to_string(time_white), box_x + 45, box_y + 3*box_sy/4 - CLOCK_FONT_SIZE/2, box_x)
+    end
 
 end
 
-local function draw_captured()
+function draw_captured()
     
     love.graphics.setColor(0, 0, 0)
-    love.graphics.rectangle("fill", BOARD_OFFSET_X - 10, BOARD_OFFSET_Y + BOARD_SIZE + 20, BOARD_SIZE + 20, 70)
+    love.graphics.rectangle("fill", BOARD_OFFSET_X - 10, BOARD_OFFSET_Y + BOARD_SIZE + 20, BOARD_SIZE + 20, CAPTURED_SIZE + 20)
     love.graphics.setColor(LIGHT_TILE_COLOR[1], LIGHT_TILE_COLOR[2], LIGHT_TILE_COLOR[3])
-    love.graphics.rectangle("fill", BOARD_OFFSET_X, BOARD_OFFSET_Y + BOARD_SIZE + 30, BOARD_SIZE, 50)
+    love.graphics.rectangle("fill", BOARD_OFFSET_X, BOARD_OFFSET_Y + BOARD_SIZE + 30, BOARD_SIZE, CAPTURED_SIZE)
 
     local box_x = BOARD_OFFSET_X
     local box_y = BOARD_OFFSET_Y + BOARD_SIZE + 30
@@ -542,9 +680,9 @@ local function draw_captured()
     end
 
     love.graphics.setColor(0, 0, 0)
-    love.graphics.rectangle("fill", BOARD_OFFSET_X - 10, BOARD_OFFSET_Y - 90, BOARD_SIZE + 20, 70)
+    love.graphics.rectangle("fill", BOARD_OFFSET_X - 10, BOARD_OFFSET_Y - 90, BOARD_SIZE + 20, CAPTURED_SIZE + 20)
     love.graphics.setColor(LIGHT_TILE_COLOR[1], LIGHT_TILE_COLOR[2], LIGHT_TILE_COLOR[3])
-    love.graphics.rectangle("fill", BOARD_OFFSET_X, BOARD_OFFSET_Y - 80, BOARD_SIZE, 50)
+    love.graphics.rectangle("fill", BOARD_OFFSET_X, BOARD_OFFSET_Y - 80, BOARD_SIZE, CAPTURED_SIZE)
 
     box_x = BOARD_OFFSET_X
     box_y = BOARD_OFFSET_Y - 80
@@ -577,6 +715,14 @@ function love.update(dt)
 
         time_white = START_TIME - elapsed_white
         time_black = START_TIME - elapsed_black
+
+        if time_white <= 0 then
+            game_over = true
+            winner = "white"
+        elseif time_black <= 0 then
+            game_over = true
+            winner = "black"
+        end
     end
 
     local mx = love.mouse.getX()
@@ -609,22 +755,7 @@ function love.mousepressed(x, y, b)
             selected_piece = piece     
     
             -- find valid move cells for this piece
-            local validity_check_function = (
-                selected_piece.data.name == "pawn" and isvalid_pawn or
-                selected_piece.data.name == "rook" and isvalid_rook or
-                selected_piece.data.name == "knight" and isvalid_knight or
-                selected_piece.data.name == "bishop" and isvalid_bishop or
-                selected_piece.data.name == "king" and isvalid_king or
-                selected_piece.data.name == "queen" and isvalid_queen or nil
-            )
-            valid_moves = {}
-            for i = 1, 8 do
-                for j = 1, 8 do
-                    if validity_check_function(selected_piece, i, j) and (i ~= selected_piece.x or j ~= selected_piece.y) then
-                        table.insert(valid_moves, {cell_x = i, cell_y = j})
-                    end
-                end
-            end
+            valid_moves = get_all_valid_moves(selected_piece)
         end
     end
 end
