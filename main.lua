@@ -3,7 +3,7 @@ local circles = {}
 -- constants
 local CELL_SIZE = 70
 local CIRCLE_SIZE = 10
-local START_TIME = 60*5
+local START_TIME = 60*30
 local TIME_INCREMENT = 5
 local CLOCK_FONT_SIZE = 45 
 local CAPTURED_SIZE = 40
